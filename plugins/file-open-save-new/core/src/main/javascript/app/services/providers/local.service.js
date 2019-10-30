@@ -23,8 +23,8 @@
  * @property {String} name The name of the module.
  */
 define(
-    [],
-    function() {
+    ['./fileutil'],
+    function(fileutil) {
       "use strict";
 
       var factoryArray = ["helperService", "$http", "$q", factory];
@@ -46,7 +46,7 @@ define(
         var baseUrl = "/cxf/browser-new";
         return {
           provider: "local",
-          order: 2,
+          order: 1,
           root: "Local",
           getBreadcrumbPath: getBreadcrumbPath,
           selectFolder: selectFolder,
@@ -67,13 +67,19 @@ define(
         }
 
         function resolvePath(path, properties) {
+           var self = this;
           return $q(function (resolve, reject) {
-            resolve(this.root + path);
+            if (fileutil.isWindows(path)) {
+              path = fileutil.convertWindowsPath(path);
+            }
+            resolve(self.root + path);
           });
         }
 
         function matchPath(path) {
-          return (path && path.indexOf("/") === 0) ? 1 : 0;
+          var isUnix = fileutil.isUnix(path);
+          var isWindows = fileutil.isWindows(path);
+          return (isUnix || isWindows) ? 1 : 0;
         }
 
         function selectFolder(folder, filters) {
@@ -107,7 +113,8 @@ define(
           if (!folder.path) {
             return folder.root ? folder.root + "/" + folder.name : folder.name;
           }
-          return folder.root + folder.path;
+          var path = fileutil.isWindows(folder.path) ? fileutil.convertWindowsPath(folder.path) : folder.path;
+          return folder.root + path;
         }
 
         function _getFilePath(file) {
@@ -153,7 +160,6 @@ define(
         }
 
         function open(file) {
-          console.log("Opening Local File: " + file.path);
           select(null, file.name, file.path, file.parent, file.connection, file.provider, null);
         }
 

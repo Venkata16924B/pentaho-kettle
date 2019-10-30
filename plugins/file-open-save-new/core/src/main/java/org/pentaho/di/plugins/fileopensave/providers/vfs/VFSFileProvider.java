@@ -41,6 +41,7 @@ import org.pentaho.di.core.vfs.KettleVFS;
 import org.pentaho.di.plugins.fileopensave.api.providers.BaseFileProvider;
 import org.pentaho.di.plugins.fileopensave.api.providers.Utils;
 import org.pentaho.di.plugins.fileopensave.api.providers.exception.FileException;
+import org.pentaho.di.plugins.fileopensave.api.providers.exception.FileNotFoundException;
 import org.pentaho.di.plugins.fileopensave.providers.vfs.model.VFSDirectory;
 import org.pentaho.di.plugins.fileopensave.providers.vfs.model.VFSFile;
 import org.pentaho.di.plugins.fileopensave.providers.vfs.model.VFSLocation;
@@ -149,30 +150,69 @@ public class VFSFileProvider extends BaseFileProvider<VFSFile> {
    * @return
    */
   @Override
-  public List<VFSFile> getFiles( VFSFile file, String filters ) {
+  public List<VFSFile> getFiles( VFSFile file, String filters ) throws FileException {
     if ( file.getPath() == null ) {
       return getRoot( file );
     }
-    List<VFSFile> files = new ArrayList<>();
+    FileObject fileObject;
     try {
-      FileObject fileObject = KettleVFS
+      fileObject = KettleVFS
         .getFileObject( file.getPath(), new Variables(), VFSHelper.getOpts( file.getPath(), file.getConnection() ) );
-      FileType fileType = fileObject.getType();
-      if ( fileType.hasChildren() ) {
-        FileObject[] children = fileObject.getChildren();
-        for ( FileObject child : children ) {
-          FileType fileType1 = child.getType();
-          if ( fileType1.hasChildren() ) {
-            files.add( VFSDirectory.create( file.getPath(), child, file.getConnection() ) );
-          } else {
-            if ( Utils.matches( child.getName().getBaseName(), filters ) ) {
-              files.add( VFSFile.create( file.getPath(), child, file.getConnection() ) );
-            }
+    } catch ( KettleFileException e ) {
+      throw new FileNotFoundException( file.getPath(), TYPE );
+    }
+    return populateChildren( file, fileObject, filters );
+  }
+
+  /**
+   * Check if a file object has children
+   *
+   * @param fileObject
+   * @return
+   */
+  private boolean hasChildren( FileObject fileObject ) {
+    try {
+      return fileObject != null && fileObject.getType().hasChildren();
+    } catch ( FileSystemException e ) {
+      return false;
+    }
+  }
+
+  /**
+   * Get the children if they are available, if an error return an empty list
+   *
+   * @param fileObject
+   * @return
+   */
+  private FileObject[] getChildren( FileObject fileObject ) {
+    try {
+      return fileObject != null ? fileObject.getChildren() : new FileObject[] {};
+    } catch ( FileSystemException e ) {
+      return new FileObject[] {};
+    }
+  }
+
+  /**
+   * Populate VFS file objects from vfs FileObject types
+   *
+   * @param parent
+   * @param fileObject
+   * @param filters
+   * @return
+   */
+  private List<VFSFile> populateChildren( VFSFile parent, FileObject fileObject, String filters ) {
+    List<VFSFile> files = new ArrayList<>();
+    if ( fileObject != null && hasChildren( fileObject ) ) {
+      FileObject[] children = getChildren( fileObject );
+      for ( FileObject child : children ) {
+        if ( hasChildren( child ) ) {
+          files.add( VFSDirectory.create( parent.getPath(), child, parent.getConnection() ) );
+        } else {
+          if ( child != null && Utils.matches( child.getName().getBaseName(), filters ) ) {
+            files.add( VFSFile.create( parent.getPath(), child, parent.getConnection() ) );
           }
         }
       }
-    } catch ( KettleFileException | FileSystemException ignored ) {
-      // File does not exist
     }
     return files;
   }

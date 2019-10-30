@@ -19,75 +19,69 @@
  * limitations under the License.
  *
  ******************************************************************************/
-
 package org.pentaho.di.trans.steps.memgroupby;
 
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
 import org.pentaho.di.core.exception.KettleException;
-import org.pentaho.di.core.row.RowDataUtil;
-import org.pentaho.di.core.row.RowMetaInterface;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
-
-import java.util.HashMap;
+import org.pentaho.di.core.row.RowMeta;
+import org.pentaho.di.core.row.value.ValueMetaBinary;
+import org.pentaho.di.core.row.value.ValueMetaInteger;
+import org.pentaho.di.core.row.value.ValueMetaString;
+import org.powermock.reflect.Whitebox;
 
 import static org.mockito.Mockito.doCallRealMethod;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import static org.powermock.api.mockito.PowerMockito.mockStatic;
-import static org.powermock.reflect.Whitebox.setInternalState;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 
-@RunWith( PowerMockRunner.class )
-@PrepareForTest( RowDataUtil.class )
 public class MemoryGroupByTest {
 
+  private MemoryGroupBy memGroupBy;
+  MemoryGroupByData memGroupByData;
+
   @Before
-  public void before() {
-    mockStatic( RowDataUtil.class );
+  public void setup() {
+    memGroupBy = mock( MemoryGroupBy.class );
+    memGroupByData = new MemoryGroupByData();
+    memGroupByData.aggMeta = new RowMeta(  );
+    memGroupByData.outputRowMeta = new RowMeta(  );
+    Whitebox.setInternalState( memGroupBy, "data", memGroupByData );
   }
 
   @Test
-  public void handleLastOfGroup_PDI18198() throws KettleException {
-    HashMap<MemoryGroupByData.HashEntry, Aggregate> map = new HashMap<>();
+  public void updateValueMetaTest() throws KettleException {
+    ValueMetaString stringMetaFromOutput = new ValueMetaString( "stringMeta" );
+    ValueMetaBinary binaryMetaFromOutput = new ValueMetaBinary( "binaryMeta" );
+    ValueMetaBinary binaryMetaFromAgg = new ValueMetaBinary( "binaryMeta" );
+    ValueMetaInteger integerMetaFromOutput = new ValueMetaInteger( "integerMeta" );
+    memGroupByData.outputRowMeta.addValueMeta( stringMetaFromOutput );
+    memGroupByData.outputRowMeta.addValueMeta( binaryMetaFromOutput );
+    memGroupByData.outputRowMeta.addValueMeta( integerMetaFromOutput );
+    memGroupByData.aggMeta.addValueMeta( binaryMetaFromAgg );
 
-    Object[] o1 = new Object[] { "k1".getBytes() };
-    Object[] o2 = new Object[] { "k2".getBytes() };
-    Object[] o3 = new Object[] { "k3".getBytes() };
+    doCallRealMethod().when( memGroupBy ).updateValueMeta();
+    memGroupBy.updateValueMeta();
 
-    MemoryGroupByData data = mock( MemoryGroupByData.class );
+    assertFalse( memGroupByData.outputRowMeta.getValueMetaList().contains( binaryMetaFromOutput ) );
+    assertTrue( memGroupByData.outputRowMeta.getValueMetaList().contains( binaryMetaFromAgg ) );
+  }
 
-    doReturn( mock( MemoryGroupByData.HashEntry.class ) ).when( data ).getHashEntry( o1 );
-    doReturn( mock( MemoryGroupByData.HashEntry.class ) ).when( data ).getHashEntry( o2 );
-    doReturn( mock( MemoryGroupByData.HashEntry.class ) ).when( data ).getHashEntry( o3 );
+  @Test
+  public void updateValueMetaNoMatchTest() throws KettleException {
+    ValueMetaString stringMetaFromOutput = new ValueMetaString( "stringMeta" );
+    ValueMetaBinary binaryMetaFromOutput = new ValueMetaBinary( "binaryMeta" );
+    ValueMetaBinary binaryMetaFromAgg = new ValueMetaBinary( "binaryMeta2" );
+    ValueMetaInteger integerMetaFromOutput = new ValueMetaInteger( "integerMeta" );
+    memGroupByData.outputRowMeta.addValueMeta( stringMetaFromOutput );
+    memGroupByData.outputRowMeta.addValueMeta( binaryMetaFromOutput );
+    memGroupByData.outputRowMeta.addValueMeta( integerMetaFromOutput );
+    memGroupByData.aggMeta.addValueMeta( binaryMetaFromAgg );
 
-    map.put( data.getHashEntry( o1 ), new Aggregate() );
-    map.put( data.getHashEntry( o2 ), new Aggregate() );
-    map.put( data.getHashEntry( o3 ), new Aggregate() );
+    doCallRealMethod().when( memGroupBy ).updateValueMeta();
+    memGroupBy.updateValueMeta();
 
-    RowMetaInterface meta = mock( RowMetaInterface.class );
-    doReturn( 0 ).when( meta ).size();
-
-    RowMetaInterface agg = mock( RowMetaInterface.class );
-    doReturn( 0 ).when( agg ).size();
-
-    Object[] output = new Object[ 0 ];
-    when( RowDataUtil.allocateRowData( 0 ) ).thenReturn( output );
-
-    MemoryGroupBy groupby = mock( MemoryGroupBy.class );
-    doCallRealMethod().when( groupby ).handleLastOfGroup();
-
-    setInternalState( data, "map", map );
-    setInternalState( data, "aggMeta", agg );
-    setInternalState( data, "groupMeta", meta );
-    setInternalState( data, "outputRowMeta", meta );
-    setInternalState( groupby, "data", data );
-
-    groupby.handleLastOfGroup();
-    verify( groupby, times( 3 ) ).putRow( agg, output );
+    assertTrue( memGroupByData.outputRowMeta.getValueMetaList().contains( binaryMetaFromOutput ) );
+    assertFalse( memGroupByData.outputRowMeta.getValueMetaList().contains( binaryMetaFromAgg ) );
   }
 }

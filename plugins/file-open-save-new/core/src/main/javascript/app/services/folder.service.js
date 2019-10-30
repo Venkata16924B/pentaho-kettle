@@ -26,9 +26,10 @@ define(
     [
       "./provider.service",
       "./file.service",
-      "../components/utils"
+      "../components/utils",
+      "pentaho/i18n-osgi!file-open-save-new.messages"
     ],
-    function (providerService, fileService, utils) {
+    function (providerService, fileService, utils, i18n) {
       "use strict";
 
       var factoryArray = [providerService.name, fileService.name, "$q", factory];
@@ -59,7 +60,8 @@ define(
           upDirectory: upDirectory,
           openPath: openPath,
           refreshFolder: refreshFolder,
-          loadFile: loadFile
+          loadFile: loadFile,
+          getDuplicate: getDuplicate
         };
 
         /**
@@ -79,6 +81,8 @@ define(
               if (folder.provider !== "recents") {
                 _selectFolder(folder, filters, useCache).then(function () {
                   resolve(self.folder);
+                }, function(err) {
+                  reject(err);
                 });
               } else {
                 resolve(self.folder);
@@ -92,7 +96,6 @@ define(
         /**
          * Select a folder by the path in the tree
          *
-         * @param tree
          * @param path
          * @param props
          * @returns {*}
@@ -117,7 +120,6 @@ define(
         /**
          * Reload the tree from the source
          *
-         * @param tree
          * @returns {*}
          */
         function refreshFolder() {
@@ -153,7 +155,7 @@ define(
                   resolve();
                 });
               }).catch(function (path) {
-                self.loadFile(path, props, resolve);
+                self.loadFile(path, props, resolve, reject);
               });
             } else {
               reject();
@@ -168,7 +170,7 @@ define(
          * @param props
          * @param resolve
          */
-        function loadFile(path, props, resolve) {
+        function loadFile(path, props, resolve, reject) {
           var self = this;
           self.folder = {path: path};
           fileService.get({ path: path }).then(function (file) {
@@ -186,6 +188,8 @@ define(
               fileService.files = [];
               _selectFile(filename, self);
               resolve();
+            }, function(error) {
+              reject(error);
             });
           });
         }
@@ -210,7 +214,6 @@ define(
         /**
          * Find a folder object by the tree path
          *
-         * @param tree
          * @param path
          * @returns {*}
          */
@@ -224,9 +227,91 @@ define(
               return;
             }
             root.open = true;
+            // Check if the root directory is / and set that directory to root if it is
+            if (root.children.length === 1 && root.children[0].name === '/') {
+              root = root.children[0];
+            }
+            root.open = true;
             _findFolder(root, parts).then(function(folder) {
               resolve(folder);
             });
+          });
+        }
+
+        /**
+         * Get root object in tree by name
+         *
+         * @param tree
+         * @param name
+         * @returns {*}
+         * @private
+         */
+        function _findRoot(tree, name) {
+          for (var i = 0; i < tree.length; i++) {
+            if (tree[i].name === name) {
+              return tree[i];
+            }
+          }
+        }
+
+        function _findFolder(node, parts) {
+          return $q(function(resolve, reject) {
+            _doFind(node, parts.shift()).then(function(folder) {
+              if (parts.length > 0) {
+                resolve(_findFolder(folder, parts));
+              } else {
+                resolve(folder);
+              }
+            });
+          });
+        }
+
+        /**
+         * Find child folder for node in tree
+         *
+         * @param node
+         * @param name
+         * @returns {*}
+         * @private
+         */
+        function _doFind(node, name) {
+          return $q(function(resolve, reject) {
+            var folder = null;
+            for (var i = 0; i < node.children.length; i++) {
+              if (node.children[i].name.trim() === name.trim()) {
+                folder = node.children[i];
+                folder.open = true;
+                folder.loading = false;
+              }
+            }
+            if (folder) {
+              resolve(folder);
+            } else {
+              if (node.children.length > 0) {
+                resolve(node);
+              } else {
+                _populateFolder(node, name, resolve);
+              }
+            }
+          });
+        }
+
+        /**
+         * If folder is not already loaded, load it from the server
+         *
+         * @param node
+         * @param name
+         * @param resolve
+         * @private
+         */
+        function _populateFolder(node, name, resolve) {
+          node.loading = true;
+          providerService.get(node.provider).createFolder(node, name).then(function(children) {
+            node.children = children;
+            node.loading = false;
+            resolve(_doFind(node, name));
+          }, function() {
+            resolve(null);
           });
         }
 
@@ -255,7 +340,6 @@ define(
         /**
          * Navigate up one directory in the tree
          *
-         * @param tree
          * @returns {*}
          */
         function upDirectory() {
@@ -326,6 +410,11 @@ define(
           return $q(function(resolve, reject) {
             service.getFilesByPath(path, useCache).then(function (files) {
               resolve(files);
+            }, function(err) {
+              reject({
+                title: i18n.get('file-open-save-plugin.vfs.unable-to-connect.title'),
+                message: i18n.get('file-open-save-plugin.vfs.unable-to-connect.message')
+              })
             });
           });
         }
@@ -345,60 +434,11 @@ define(
               service.selectFolder(folder, filters, useCache).then(function() {
                 folder.loading = false;
                 resolve();
-              }, function () {
-                resolve();
+              }, function (err) {
+                reject(err);
               });
             } else {
               resolve();
-            }
-          });
-        }
-
-        function _findRoot(tree, name) {
-          for (var i = 0; i < tree.length; i++) {
-            if (tree[i].name === name) {
-              return tree[i];
-            }
-          }
-        }
-
-        function _findFolder(node, parts) {
-          return $q(function(resolve, reject) {
-            _doFind(node, parts.shift()).then(function(folder) {
-              if (parts.length > 0) {
-                resolve(_findFolder(folder, parts));
-              } else {
-                resolve(folder);
-              }
-            });
-          });
-        }
-
-        function _doFind(node, name) {
-          return $q(function(resolve, reject) {
-            var folder = null;
-            for (var i = 0; i < node.children.length; i++) {
-              if (node.children[i].name === name) {
-                folder = node.children[i];
-                folder.open = true;
-                folder.loading = false;
-              }
-            }
-            if (folder) {
-              resolve(folder);
-            } else {
-              if (node.children.length > 0) {
-                resolve(node);
-              } else {
-                node.loading = true;
-                providerService.get(node.provider).createFolder(node, name).then(function(children) {
-                  node.children = children;
-                  node.loading = false;
-                  resolve(_doFind(node, name));
-                }, function() {
-                  resolve(null);
-                });
-              }
             }
           });
         }
@@ -521,6 +561,23 @@ define(
             retVal = utils.truncateString(retVal, 386) + "...";
           }
           return retVal + "\"";
+        }
+
+        /**
+         * Checks to see if the user has entered a file to save the same as a file already in current directory
+         * NOTE: does not check for hidden files. That is done in the checkForSecurityOrDupeIssues rest call
+         * @return {boolean} - true if duplicate, false otherwise
+         * @private
+         */
+        function getDuplicate(name) {
+          if (this.folder && this.folder.children) {
+            for (var i = 0; i < this.folder.children.length; i++) {
+              if (name === this.folder.children[i].name) {
+                return this.folder.children[i];
+              }
+            }
+          }
+          return null;
         }
       }
     });

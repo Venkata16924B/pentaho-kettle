@@ -114,7 +114,7 @@ define([
     vm.fileLoading = false;
     vm.searching = false;
     vm.state = $state;
-    vm.searchResults = [];
+    vm.searchResults = null;
     vm.status = "";
     vm.breadcrumbPath = { prefix: null, path: "Recents", uri: null };
     vm.type = null;
@@ -129,6 +129,7 @@ define([
       vm.loadingMessage = i18n.get("file-open-save-plugin.loading.message");
       vm.showRecents = false;
       vm.selectedFiles = [];
+      vm.errorFiles = [];
       vm.autoExpand = false;
       vm.searchString = "";
       _resetFileAreaMessage();
@@ -163,6 +164,10 @@ define([
 
     function _init() {
       var path = decodeURIComponent($location.search().path);
+
+      // URLs come over with '+' instead of spaces
+      path = path.replace(/\+/g, " ");
+
       if (path && path !== "undefined") {
         vm.autoExpand = true;
         openPath(path, $location.search());
@@ -237,7 +242,7 @@ define([
      * @param {Boolean} useCache - should use cache
      */
     function selectFolder(folder, useCache) {
-      vm.searchResults = [];
+      vm.searchResults = null;
       if (vm.searching) {
         _clearSearch();
       }
@@ -250,8 +255,10 @@ define([
         vm.fileLoading = false;
         vm.showRecents = folder.provider === "recents";
         _update();
-      }).catch(function() {
+      }).catch(function(error) {
+        folder.loading = false;
         vm.fileLoading = false;
+        modalService.open("error-dialog", error.title, error.message).then(_update);
       });
     }
 
@@ -276,8 +283,15 @@ define([
       folderService.openPath(path, properties).then(function() {
         vm.fileLoading = false;
         _update();
-      }).catch(function(e) {
+      }).catch(function(error) {
         vm.fileLoading = false;
+        modalService.open("error-dialog", error.title, error.message).then(function () {
+          if (vm.folder.provider) {
+            selectFolder(vm.folder);
+          } else {
+            selectFolderByPath(vm.folder.path);
+          }
+        });
       });
     }
 
@@ -297,6 +311,7 @@ define([
       if (vm.selectedFiles.length === 1) {
         vm.fileToSave = vm.selectedFiles[0].type === "folder" ? vm.fileToSave : vm.selectedFiles[0].name;
       }
+      vm.errorFiles = vm.selectedFiles;
     }
 
     /**
@@ -319,7 +334,7 @@ define([
      * @returns {Array} - Search result files or selected folder children
      */
     function _getFiles() {
-      return vm.searchResults.length !== 0 ? vm.searchResults : vm.folder.children;
+      return vm.searchResults !== null ? vm.searchResults : vm.folder.children;
     }
 
     /**
@@ -410,19 +425,18 @@ define([
      * @private
      */
     function _save(override) {
+      var duplicate = folderService.getDuplicate(vm.fileToSave);
       if (_isInvalidName()) {
         _triggerError(17);
-      } else if (override || !_isDuplicate()) {
-        var currentFilename = "";
-        if (vm.selectedFiles.length > 0) {
-          currentFilename = vm.selectedFiles[0].name;
-        }
+      } else if (override || duplicate === null) {
+        var currentFilename = duplicate !== null ? duplicate.name : null;
         fileService.save(vm.fileToSave, vm.folder, currentFilename, override).then(function() {
           // Dialog should close
         }, function() {
           _triggerError(3);
         });
       } else {
+        vm.errorFiles = [duplicate];
         _triggerError(1);
       }
     }
@@ -703,25 +717,6 @@ define([
     }
 
     /**
-     * Checks to see if the user has entered a file to save the same as a file already in current directory
-     * NOTE: does not check for hidden files. That is done in the checkForSecurityOrDupeIssues rest call
-     * @return {boolean} - true if duplicate, false otherwise
-     * @private
-     */
-    function _isDuplicate() {
-      if (vm.folder && vm.folder.children) {
-        for (var i = 0; i < vm.folder.children.length; i++) {
-          if (vm.fileToSave === vm.folder.children[i].name) {
-            fileService.files = [vm.folder.children[i]];
-            return true;
-          }
-        }
-      }
-      _update();
-      return false;
-    }
-
-    /**
      * Checks if the file name to save is valid or not. An invalid name contains forward or backward slashes
      * @returns {boolean} - true if the name is invalid, false otherwise
      * @private
@@ -782,8 +777,9 @@ define([
     }
 
     function doSearch(value) {
-      vm.searchResults = [];
+      vm.searchResults = null;
       if (value !== "") {
+        vm.searchResults = [];
         searchService.search(vm.folder, vm.searchResults, value);
       }
       _update();

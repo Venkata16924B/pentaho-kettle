@@ -84,15 +84,18 @@ define([
     vm.onClick = onClick;
     vm.onRightClick = onRightClick;
     vm.isSelected = isSelected;
+    vm.isHighlighted = isHighlighted;
     vm.onCopyStart = onCopyStart;
     vm.onCut = onCut;
     vm.onPaste = onPaste;
     vm.canPaste = canPaste;
     vm.onPasteFolder = onPasteFolder;
     vm.onAddFolderClick = onAddFolderClick;
+    vm.onBodyClick = onBodyClick;
     vm.errorType = 0;
     vm.onKeyDown = onKeyDown;
     vm.onKeyUp = onKeyUp;
+    vm.highlighted = [];
     var targetFiles = [];
 
     /**
@@ -121,9 +124,28 @@ define([
       }, 200);
     }
 
+    function onBodyClick(e, id) {
+      var parentNode = e.target.parentNode;
+      var found = false;
+      while (parentNode) {
+        if (parentNode.id === id) {
+          found = true;
+          break;
+        }
+        parentNode = parentNode.parentNode;
+      }
+      if (!found) {
+        vm.selectedFiles = [];
+        vm.highlighted = [];
+      }
+    }
+
     function onKeyDown(event) {
       if (event.target.tagName !== "INPUT") {
         var ctrlKey = event.metaKey || event.ctrlKey;
+        if (event.keyCode === 27) {
+          vm.highlighted = [];
+        }
         if (event.keyCode === 67 && ctrlKey) {
           targetFiles = vm.selectedFiles;
           clipboardService.set(targetFiles, "copy");
@@ -154,15 +176,15 @@ define([
     }
 
     var types = [];
-    types['kjb'] = "job";
-    types['ktr'] = "trans";
-    types['jpg'] = "image";
-    types['png'] = "image";
-    types['gif'] = "image";
-    types['txt'] = "text";
-    types['csv'] = "text";
-    types['json'] = "text";
-    types['xml'] = "text";
+    types['kjb'] = "Job.S_D";
+    types['ktr'] = "Transformation.S_D";
+    types['jpg'] = "Picture.S_D";
+    types['png'] = "Picture.S_D";
+    types['gif'] = "Picture.S_D";
+    types['txt'] = "Report.S_D";
+    types['csv'] = "Report.S_D";
+    types['json'] = "Report.S_D";
+    types['xml'] = "Report.S_D";
 
     /**
      * Gets the file extension
@@ -171,12 +193,14 @@ define([
      */
     function getExtension(file) {
       if (file.type === "folder") {
-        return "folder";
+        return vm.isSelected(file) && !vm.isHighlighted(file) ? "Archive.S_D_white" : "Archive.S_D";
       }
       var index = file.path.lastIndexOf(".");
       var extension = file.path.substr(index + 1, file.path.length);
       var type = types[extension.toLowerCase()];
-      return type ? type : "blank";
+      var icon = type ? type : "Doc.S_D";
+      icon += vm.isSelected(file) && !vm.isHighlighted(file) ? "_white" : "";
+      return icon;
     }
 
     /**
@@ -201,6 +225,7 @@ define([
      * @param {Boolean} ctrl - whether or not ctrl/command key is pressed
      */
     function selectFile(file, shift, ctrl) {
+      vm.highlighted = [];
       if (ctrl) {
         var index = vm.selectedFiles.indexOf(file);
         if (index === -1) {
@@ -412,6 +437,9 @@ define([
      */
     function onRenameClick() {
       targetFiles[0].editing = true;
+      $timeout(function() {
+        selectFile(targetFiles[0]);
+      });
     }
 
     /**
@@ -437,15 +465,19 @@ define([
      * @param {File} file - File object that was clicked
      */
     function onRightClick(e, file) {
+      if (!vm.isSelected(file)) {
+        vm.selectedFiles = [];
+      }
       if (file === null) {
         targetFiles = [vm.folder];
       } else {
-        if ( vm.selectedFiles.length === 0 || ( vm.selectedFiles.length > 0 && vm.selectedFiles.indexOf(file) === -1 ) ) {
+        if (vm.selectedFiles.length === 0 || (vm.selectedFiles.length > 0 && !vm.isSelected(file))) {
           targetFiles = [file];
         } else {
           targetFiles = vm.selectedFiles;
         }
       }
+      vm.highlighted = targetFiles;
     }
 
     /**
@@ -455,6 +487,10 @@ define([
      */
     function isSelected(file) {
       return vm.selectedFiles.indexOf(file) !== -1;
+    }
+
+    function isHighlighted(file) {
+      return vm.highlighted.indexOf(file) !== -1;
     }
 
     /**

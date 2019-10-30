@@ -22,9 +22,16 @@
 
 package org.pentaho.di.trans.steps.memgroupby;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.math.stat.descriptive.rank.Percentile;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleValueException;
 import org.pentaho.di.core.row.RowDataUtil;
@@ -36,7 +43,6 @@ import org.pentaho.di.core.row.value.ValueMetaBase;
 import org.pentaho.di.core.row.value.ValueMetaInteger;
 import org.pentaho.di.core.row.value.ValueMetaNumber;
 import org.pentaho.di.core.row.value.ValueMetaString;
-import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransMeta;
@@ -46,12 +52,6 @@ import org.pentaho.di.trans.step.StepInterface;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.step.StepMetaInterface;
 import org.pentaho.di.trans.steps.memgroupby.MemoryGroupByData.HashEntry;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Set;
-import java.util.TreeSet;
 
 /**
  * Groups information based on aggregation rules. (sum, count, ...)
@@ -175,6 +175,8 @@ public class MemoryGroupBy extends BaseStep implements StepInterface {
     // Here is where we start to do the real work...
     //
     if ( r == null ) { // no more input to be expected... (or none received in the first place)
+
+      updateValueMeta();
       handleLastOfGroup();
 
       setOutputDone();
@@ -197,8 +199,7 @@ public class MemoryGroupBy extends BaseStep implements StepInterface {
     return true;
   }
 
-  @VisibleForTesting
-  void handleLastOfGroup() throws KettleException {
+  private void handleLastOfGroup() throws KettleException {
     // Dump the content of the map...
     //
     for ( HashEntry entry : data.map.keySet() ) {
@@ -213,7 +214,7 @@ public class MemoryGroupBy extends BaseStep implements StepInterface {
       for ( int i = 0; i < data.aggMeta.size(); i++ ) {
         outputRowData[index++] = data.aggMeta.getValueMeta( i ).convertToNormalStorageType( aggregateResult[i] );
       }
-      putRow( data.aggMeta, outputRowData );
+      putRow( data.outputRowMeta, outputRowData );
     }
 
     // What if we always need to give back one row?
@@ -235,6 +236,21 @@ public class MemoryGroupBy extends BaseStep implements StepInterface {
         }
       }
       putRow( data.outputRowMeta, outputRowData );
+    }
+  }
+
+  @VisibleForTesting
+  void updateValueMeta() throws KettleException {
+
+    List<ValueMetaInterface> outputValueMetaList = data.outputRowMeta.getValueMetaList();
+    List<ValueMetaInterface> aggMetaValueMetaList = data.aggMeta.getValueMetaList();
+    for ( int outputIndex = 0; outputIndex < outputValueMetaList.size(); ++outputIndex ) {
+      for ( int aggIndex = 0; aggIndex < aggMetaValueMetaList.size(); ++aggIndex ) {
+        if ( aggMetaValueMetaList.get( aggIndex ).getName().equals( outputValueMetaList.get( outputIndex ).getName() ) ) {
+          data.outputRowMeta.removeValueMeta(  outputValueMetaList.get( outputIndex ).getName() );
+          data.outputRowMeta.addValueMeta( outputIndex,  aggMetaValueMetaList.get( aggIndex ) );
+        }
+      }
     }
   }
 
